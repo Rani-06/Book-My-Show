@@ -39,7 +39,9 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false
+                }
             }
         }
 
@@ -47,6 +49,9 @@ pipeline {
             steps {
                 sh '''
                 cd bookmyshow-app
+
+                rm -rf node_modules package-lock.json
+
                 npm install
                 '''
             }
@@ -54,8 +59,11 @@ pipeline {
 
         stage('OWASP Scan') {
             steps {
-                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit',
-                odcInstallation: 'DP-Check'
+
+                dependencyCheck(
+                    additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit',
+                    odcInstallation: 'DP-Check'
+                )
 
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
@@ -63,7 +71,9 @@ pipeline {
 
         stage('Trivy Scan') {
             steps {
-                sh 'trivy fs . > trivyfs.txt'
+                sh '''
+                trivy fs . > trivyfs.txt
+                '''
             }
         }
 
@@ -75,7 +85,7 @@ pipeline {
                     withDockerRegistry(credentialsId: 'docker-cred') {
 
                         sh '''
-                        docker build -t rani06/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+                        docker build --no-cache -t rani06/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
 
                         docker push rani06/bms:latest
                         '''
@@ -93,6 +103,8 @@ pipeline {
                 docker rm bms || true
 
                 docker run -d --name bms -p 3000:3000 rani06/bms:latest
+
+                docker ps
                 '''
             }
         }
@@ -102,15 +114,17 @@ pipeline {
 
         always {
 
-            emailext attachLog: true,
-            subject: "${currentBuild.result} : Job ${env.JOB_NAME}",
-            body: """
-            Project: ${env.JOB_NAME}
-            Build Number: ${env.BUILD_NUMBER}
-            Build URL: ${env.BUILD_URL}
-            """,
-            to: 'YOURMAIL@gmail.com',
-            attachmentsPattern: 'trivyfs.txt'
+            emailext(
+                attachLog: true,
+                subject: "${currentBuild.result} : Job ${env.JOB_NAME}",
+                body: """
+                Project: ${env.JOB_NAME}
+                Build Number: ${env.BUILD_NUMBER}
+                Build URL: ${env.BUILD_URL}
+                """,
+                to: 'YOURMAIL@gmail.com',
+                attachmentsPattern: 'trivyfs.txt'
+            )
         }
     }
 }
