@@ -8,6 +8,7 @@ pipeline {
 
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
+        IMAGE_NAME = "rani06/bms:latest"
     }
 
     stages {
@@ -38,7 +39,7 @@ pipeline {
         }
 
         // QUALITY GATE REMOVE CHESAM
-        // ENDUKANTE PIPELINE HANG AVUTUNDI
+        // ENDUKANTE SOMETIMES PIPELINE WAIT AVUTUNDI
 
         stage('Install Dependencies') {
             steps {
@@ -52,15 +53,27 @@ pipeline {
             }
         }
 
+        // OWASP OPTIONAL
+        // Jenkins lo DP-Check configure cheyyakapothe skip avvadaniki try-catch use chesam
+
         stage('OWASP Scan') {
             steps {
+                script {
+                    try {
 
-                dependencyCheck(
-                    additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit',
-                    odcInstallation: 'DP-Check'
-                )
+                        dependencyCheck(
+                            additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit',
+                            odcInstallation: 'DP-Check'
+                        )
 
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+
+                    } catch (Exception e) {
+
+                        echo "OWASP Dependency Check skipped because DP-Check not configured"
+
+                    }
+                }
             }
         }
 
@@ -80,9 +93,9 @@ pipeline {
                     withDockerRegistry(credentialsId: 'docker-cred') {
 
                         sh '''
-                        docker build --no-cache -t rani06/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+                        docker build --no-cache -t $IMAGE_NAME -f bookmyshow-app/Dockerfile bookmyshow-app
 
-                        docker push rani06/bms:latest
+                        docker push $IMAGE_NAME
                         '''
                     }
                 }
@@ -97,7 +110,7 @@ pipeline {
 
                 docker rm bms || true
 
-                docker run -d --name bms -p 3000:3000 rani06/bms:latest
+                docker run -d --name bms -p 3000:3000 $IMAGE_NAME
 
                 docker ps
                 '''
@@ -111,12 +124,12 @@ pipeline {
 
             emailext(
                 attachLog: true,
-                subject: "${currentBuild.result} : Job ${env.JOB_NAME}",
+                subject: "${currentBuild.result}: Job ${env.JOB_NAME}",
                 body: """
-                Project: ${env.JOB_NAME}
-                Build Number: ${env.BUILD_NUMBER}
-                Build URL: ${env.BUILD_URL}
-                """,
+Project: ${env.JOB_NAME}
+Build Number: ${env.BUILD_NUMBER}
+Build URL: ${env.BUILD_URL}
+""",
                 to: 'YOURMAIL@gmail.com',
                 attachmentsPattern: 'trivyfs.txt'
             )
